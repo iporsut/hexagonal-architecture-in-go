@@ -84,8 +84,9 @@ func (n *MockOrderPlacedNotifier) NotifyOrderPlaced(ctx context.Context, order O
 }
 
 func TestImportProducts(t *testing.T) {
+	productRepo := NewInMemoryProductRepo()
 	orderApp := NewOrderApp(
-		WithProductRepo(NewInMemoryProductRepo()),
+		WithProductRepo(productRepo),
 	)
 
 	products := []Product{
@@ -97,12 +98,18 @@ func TestImportProducts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+
+	if len(productRepo.products) != 2 {
+		t.Fatalf("expected 2 products, got %d", len(productRepo.products))
+	}
 }
 
 func TestAddItemToCart(t *testing.T) {
+	productRepo := NewInMemoryProductRepo()
+	cartRepo := NewInMemoryCartRepo()
 	orderApp := NewOrderApp(
-		WithProductRepo(NewInMemoryProductRepo()),
-		WithCartRepo(NewInMemoryCartRepo()),
+		WithProductRepo(productRepo),
+		WithCartRepo(cartRepo),
 	)
 	products := []Product{
 		{ID: "prod1", Name: "Product 1", Price: 10.0},
@@ -117,15 +124,12 @@ func TestAddItemToCart(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	cartItems, err := orderApp.cartRepo.GetCartItems(context.Background(), "user1")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if len(cartRepo.carts["user1"]) != 1 {
+		t.Fatalf("expected 1 item in cart, got %d", len(cartRepo.carts["user1"]))
 	}
-	if len(cartItems) != 1 {
-		t.Fatalf("expected 1 item in cart, got %d", len(cartItems))
-	}
-	if cartItems[0].ProductID != "prod1" || cartItems[0].Quantity != 2 {
-		t.Fatalf("unexpected cart item: %+v", cartItems[0])
+
+	if cartRepo.carts["user1"][0].ProductID != "prod1" || cartRepo.carts["user1"][0].Quantity != 2 {
+		t.Fatalf("cart item does not match expected values")
 	}
 }
 

@@ -1,6 +1,8 @@
 package orders
 
-import "context"
+import (
+	"context"
+)
 
 type Product struct {
 	ID    string
@@ -55,14 +57,61 @@ type orderApp struct {
 }
 
 func (o *orderApp) ImportProducts(ctx context.Context, products []Product) error {
-	return nil
+	return o.productRepo.ImportProducts(ctx, products)
 }
 
 func (o *orderApp) AddItemToCart(ctx context.Context, userID string, productID string, quantity int) error {
+	product, err := o.productRepo.GetProductByID(ctx, productID)
+	if err != nil {
+		return err
+	}
+	item := OrderItem{
+		ProductID: product.ID,
+		Quantity:  quantity,
+		Price:     product.Price,
+	}
+	err = o.cartRepo.AddItemToCart(ctx, userID, item)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (o *orderApp) PlaceOrder(ctx context.Context, userID string) error {
+	cartItems, err := o.cartRepo.GetCartItems(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	order := Oder{
+		ID:     "order123", // In real app, generate unique ID
+		UserID: userID,
+		Items:  cartItems,
+	}
+
+	var total float64
+	for _, item := range cartItems {
+		total += item.Price * float64(item.Quantity)
+	}
+	order.TotalAmt = total
+
+	err = o.orderRepo.SaveOrder(ctx, order)
+	if err != nil {
+		return err
+	}
+
+	err = o.cartRepo.ClearCart(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if o.orderPlacedNotifier != nil {
+		err = o.orderPlacedNotifier.NotifyOrderPlaced(ctx, order)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -98,4 +147,53 @@ func NewOrderApp(opts ...OrderAppOption) *orderApp {
 		opt(o)
 	}
 	return o
+}
+
+// Notification adapter for OrderPlacedNotifier can be added here if needed
+
+type BroadcastOrderPlacedNotifier struct {
+	notifiers []OrderPlacedNotifier
+}
+
+func NewBroadcastOrderPlacedNotifier(notifiers []OrderPlacedNotifier) *BroadcastOrderPlacedNotifier {
+	return &BroadcastOrderPlacedNotifier{
+		notifiers: notifiers,
+	}
+}
+
+func (b *BroadcastOrderPlacedNotifier) NotifyOrderPlaced(ctx context.Context, order Oder) error {
+	for _, notifier := range b.notifiers {
+		err := notifier.NotifyOrderPlaced(ctx, order)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type SMSNotifier struct {
+}
+
+func (s *SMSNotifier) NotifyOrderPlaced(ctx context.Context, order Oder) error {
+	// Simulate sending SMS
+	return nil
+}
+
+type EmailNotifier struct {
+}
+
+func (e *EmailNotifier) NotifyOrderPlaced(ctx context.Context, order Oder) error {
+	// Simulate sending Email
+	return nil
+}
+
+func main() {
+	notifier := NewBroadcastOrderPlacedNotifier([]OrderPlacedNotifier{
+		&SMSNotifier{},
+		&EmailNotifier{},
+	})
+
+	orderApp := NewOrderApp(
+		WithOrderPlacedNotifier(notifier),
+	)
 }
